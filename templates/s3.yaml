@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Bucket S3 per logging
+
+Parameters:
+  S3IntelligentTiering:
+    Description: Imposta lo stato dell'intelligent tiering su S3
+    Type: String
+    AllowedValues:
+      - "Enabled"
+      - "Disabled"
+
+Resources:
+  # Il nome viene generato casualmente
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Tutti i nuovi bucket vengono automaticamente crittografati con SSE-S3.
+      # https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-encryption.html
+      # BucketEncryption:
+      # Intelligent tiering per tutti i file sotto "/logs"
+      IntelligentTieringConfigurations:
+        - Id: LoggingIntelligentTiering
+          Prefix: "/logs/"
+          Status: !Ref S3IntelligentTiering
+          Tierings:
+            - AccessTier: ARCHIVE_ACCESS
+              Days: 90
+            - AccessTier: DEEP_ARCHIVE_ACCESS
+              Days: 180
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      # Il bucket deve essere privato
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      # È possibile configurare la replicazione del bucket in un altro bucket
+      # ReplicationConfiguration:
+      #  ...
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType

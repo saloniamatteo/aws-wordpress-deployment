@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Alert CloudWatch
+
+# Infrastruttura
+# ===============
+# CloudWatch:
+#   Alarm:
+#     - ECS Service avg CPUUtilization (>80% in 5 min)
+#     - RDS DB avg CPUUtilization (>80% in 5 min)
+
+Parameters:
+  ECSCPUUtilizationThreshold:
+    Description: Soglia di utilizzo CPU dei task ECS sopra cui inviare email di notifica tramite SNS
+    Type: Number
+
+  RDSCPUUtilizationThreshold:
+    Description: Soglia di utilizzo CPU del DB RDS sopra cui inviare email di notifica tramite SNS
+    Type: Number
+
+Resources:
+  CloudWatchECSCPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Wordpress ECS CPUUtilization Alarm (>80% for 5 min)"
+      # Definizione risorse da osservare
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+        - Name: ServiceName
+          Value: !GetAtt ECSService.Name
+      # Definizione parametri da osservare
+      MetricName: CPUUtilization
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: !Ref ECSCPUUtilizationThreshold
+      # Definizione periodo dei parametri da osservare (300 secondi = 5 minuti)
+      DatapointsToAlarm: 1
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Average
+      # (any state) -> ALARM
+      AlarmActions:
+        - !Ref SNSTopic
+      # (any state) -> OK
+      OKActions:
+        - !Ref SNSTopic
+      # (any state) -> INSUFFICIENT_DATA
+      InsufficientDataActions:
+        - !Ref SNSTopic
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  CloudWatchRDSCPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Wordpress RDS CPUUtilization Alarm (>80% for 5 min)"
+      # Definizione risorse da osservare
+      Namespace: AWS/RDS
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RDSInstance
+      # Definizione parametri da osservare
+      MetricName: CPUUtilization
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: !Ref RDSCPUUtilizationThreshold
+      # Definizione periodo dei parametri da osservare (300 secondi = 5 minuti)
+      DatapointsToAlarm: 1
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Average
+      # (any state) -> ALARM
+      AlarmActions:
+        - !Ref SNSTopic
+      # (any state) -> OK
+      OKActions:
+        - !Ref SNSTopic
+      # (any state) -> INSUFFICIENT_DATA
+      InsufficientDataActions:
+        - !Ref SNSTopic
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType

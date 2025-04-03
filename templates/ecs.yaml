@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Cluster ECS, task definition, servizio
+
+# Infrastruttura
+# ===============
+# ECS:
+#   Capacity providers: Fargate, Fargate + Spot
+#
+#   Ruolo di servizio:
+#     ALB Target Group:
+#       - ELB -> Deregister Targets
+#       - ELB -> Describe*
+#       - ELB -> Register Targets
+#
+#   Ruolo di esecuzione:
+#     ecs-tasks.amazonaws.com:
+#       - AmazonECSTaskExecutionRolePolicy
+#
+#   Security Group:
+#     - Proto:tcp  FromPort:80  ToPort:80  FromSG: Load Balancer Security Group
+#
+#   Task Definition:
+#     - Immagine: wordpress:$VERSIONE
+#     - Porta: 80
+#     - Environment:
+#       - WORDPRESS_DB_HOST:      Indirizzo istanza DB RDS
+#       - WORDPRESS_DB_USER:      DBUsername
+#       - WORDPRESS_DB_PASSWORD:  DBPassword
+#       - WORDPRESS_DB_NAME:      DBName
+#     - Mountpoint:
+#       - Path: /var/www/html/wp-content/uploads
+#         Source: WordpressUploadsVolume
+#     - CPU: ECSCPUSize
+#     - Memory (RAM): ECSMemorySize
+#     - Family: WordpressECS
+#     - CPU Arch: ECSCPUArch
+#     - OS Family: LINUX
+#     - Volumi:
+#       - WordpressUploadsVolume:
+#         - Filesystem: EFS
+#           Root: /
+#           TransitEncryption: Enabled
+#
+#   Service:
+#     - Launch type: Fargate
+#     - Network config:
+#       - Public IP: Enabled
+#       - Subnets:
+#         - PublicSubnet1
+#         - PublicSubnet2
+#         - PublicSubnet3
+
+Parameters:
+  WordpressVersion:
+    Description: Versione Wordpress usata
+    Type: String
+
+  ECSMonitoring:
+    Description: Imposta lo stato del monitoraggio dei container (container insights)
+    Type: String
+    AllowedValues:
+      - "enhanced"
+      - "enabled"
+      - "disabled"
+
+  # Unità CPU da allocare:
+  # - 256   -> 0.25 vCPU
+  # - 512   -> 0.5  vCPU
+  # - 1024  -> 1    vCPU
+  # - 2048  -> 2    vCPU
+  # ...
+  ECSCPUSize:
+    Description: Unità CPU da allocare ad ogni container ECS
+    Type: String
+
+  # Quantità di RAM (in MiB) da allocare:
+  # - 0.25 vCPU -> 512, 1024, 2048
+  # - 0.5  vCPU -> 1024, 2048, 3072, 4096
+  # - 1    vCPU -> da 2048 a 8192, in incrementi di 1024
+  # - 2    vCPU -> da 4096 a 16384, in incrementi di 1024
+  # ...
+  ECSMemorySize:
+    Description: Quantità di RAM da allocare ad ogni container ECS
+    Type: String
+
+  ECSCPUArch:
+    Description: Architettura della CPU da usare sui container ECS
+    Type: String
+    AllowedValues:
+      - "X86_64"
+      - "ARM64"
+
+  ServiceFargateWeight:
+    Description: Bias (weight) del provider Fargate per ECS
+    Type: Number
+
+  ServiceFargateSpotWeight:
+    Description: Bias (weight) del provider Fargate Spot per ECS
+    Type: Number
+
+  # Numero desiderato di istanze ECS per Wordpress
+  ServiceInstances:
+    Description: Numero di istanze desiderate per il servizio Wordpress
+    Type: Number
+    MinValue: 3
+
+Resources:
+  # Cluster ECS su Fargate
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      # Utilizza sia Fargate che Fargate con istanze spot
+      CapacityProviders:
+        - "FARGATE"
+        - "FARGATE_SPOT"
+      ClusterName: !Sub "${AWS::StackName}-Cluster"
+      ClusterSettings:
+        # NOTA: le metriche dei container vengono fatturate
+        # come metriche CloudWatch personalizzate
+        - Name: containerInsights
+          Value: !Ref ECSMonitoring
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Ruolo di servizio per ECS: modifica target ALB
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ecsServicePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:Describe*
+                  - elasticloadbalancing:RegisterTargets
+                Resource: !Ref ALBTargetGroup
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # Permette alle task ECS di scaricare immagini da ECR,
+      # effettuare il logging CloudWatch, e altre operazioni essenziali.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+      # Permetti accesso a Secrets Manager
+      - PolicyName: AllowSecretsManagerAccess
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource:
+                - !Ref DBUsernameSecret
+                - !Ref DBPasswordSecret
+      # Permetti la decrittazione con la chiave KMS
+      - PolicyName: AllowKMSKeyDecrypt
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt RDSKMSKey.Arn
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Security Group per ECS
+  # Permette solo traffico in ingresso dall'SG del Load Balancer sulla porta 80
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-ECSSecurityGroup"
+      GroupDescription: "ECS Security Group"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSG
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ECSSecurityGroup"
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Gruppo di log
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/log-group
+
+  # Crea task ECS
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: !Sub "${AWS::StackName}-Wordpress"
+          # Usa l'immagine wordpress:$VERSIONE
+          # https://hub.docker.com/_/wordpress
+          # https://gallery.ecr.aws/docker/library/wordpress
+          Image: !Sub "wordpress:${WordpressVersion}"
+          PortMappings:
+            - ContainerPort: 80
+          # Inserisci le variabili nell'env docker
+          Environment:
+            - Name: WORDPRESS_DB_HOST
+              Value: !GetAtt RDSInstance.Endpoint.Address
+            - Name: WORDPRESS_DB_NAME
+              Value: !Ref DBName
+          # Ottieni le credenziali del DB da Secrets Manager
+          Secrets:
+            - Name: WORDPRESS_DB_USER
+              ValueFrom: !Ref DBUsernameSecret
+            - Name: WORDPRESS_DB_PASSWORD
+              ValueFrom: !Ref DBPasswordSecret
+          # La cartella dei file caricati su wordpress
+          # viene montata dal disco EFS, in modo tale da
+          # condividere i contenuti con tutte le istanze
+          MountPoints:
+            - ContainerPath: /var/www/html/wp-content/uploads
+              SourceVolume: WordpressUploadsVolume
+          # Logging
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+              mode: non-blocking
+      Cpu: !Ref ECSCPUSize
+      Memory: !Ref ECSMemorySize
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      Family: !Sub "${AWS::StackName}-WordpressECS"
+      # Valori ammessi:
+      # - none    -> nessuna connettività esterna
+      # - bridge  -> stack di rete virtualizzato
+      # - awsvpc  -> obbligatorio con Fargate; porte esposte mappate sulla
+      #              porta dell'Elastic Network Interface (ENI) collegata.
+      #              Ogni task deve specificare NetworkConfiguration.
+      # - host    -> stack di rete EC2; porte esposte mappate direttamente
+      #              alla porta host corrispondente
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+          CpuArchitecture: !Ref ECSCPUArch
+          OperatingSystemFamily: LINUX
+      TaskRoleArn: !Ref ECSTaskExecutionRole
+      Volumes:
+        - Name: WordpressUploadsVolume
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFS
+            RootDirectory: "/"
+            TransitEncryption: ENABLED
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Crea servizio ECS (long-lived task)
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Sub "${AWS::StackName}-WordpressService"
+      TaskDefinition: !Ref ECSTaskDefinition
+      #LaunchType: FARGATE
+      CapacityProviderStrategy:
+        - CapacityProvider: "FARGATE"
+          Weight: !Ref ServiceFargateWeight
+        - CapacityProvider: "FARGATE_SPOT"
+          Weight: !Ref ServiceFargateSpotWeight
+      # Istanze desiderate: una per ogni AZ
+      DesiredCount: !Ref ServiceInstances
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # NOTA: implementando un NAT Gateway è possibile
+          # usare delle subnet private -- in teoria, per il
+          # nostro caso d'uso, le subnet pubbliche + gruppi
+          # di sicurezza vanno più che bene.
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+            - !Ref PublicSubnet3
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - TargetGroupArn: !Ref ALBTargetGroup
+          ContainerName: !Sub "${AWS::StackName}-Wordpress"
+          ContainerPort: 80
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType

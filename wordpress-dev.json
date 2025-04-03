@@ -1,0 +1,114 @@
+[
+    {
+        "ParameterKey": "AdminEmail",
+        "ParameterValue": "CHANGEME@example.com"
+    },
+    {
+        "ParameterKey": "EnvType",
+        "ParameterValue": "dev"
+    },
+    {
+        "ParameterKey": "WordpressVersion",
+        "ParameterValue": "latest"
+    },
+    {
+        "ParameterKey": "EFSAutoBackup",
+        "ParameterValue": "DISABLED"
+    },
+    {
+        "ParameterKey": "EFSEncryption",
+        "ParameterValue": "false"
+    },
+    {
+        "ParameterKey": "VPCCIDR",
+        "ParameterValue": "10.14.0.0/16"
+    },
+    {
+        "ParameterKey": "ALBStickinessDuration",
+        "ParameterValue": "900"
+    },
+    {
+        "ParameterKey": "ALBCustomHeaderName",
+        "ParameterValue": "X-Origin-CloudFront-Only"
+    },
+    {
+        "ParameterKey": "DBName",
+        "ParameterValue": "wordpressdb"
+    },
+    {
+        "ParameterKey": "DBDeletionProtection",
+        "ParameterValue": "false"
+    },
+    {
+        "ParameterKey": "DBImmediateChanges",
+        "ParameterValue": "true"
+    },
+    {
+        "ParameterKey": "DBInstanceClass",
+        "ParameterValue": "db.t3.micro"
+    },
+    {
+        "ParameterKey": "DBMonitoringInterval",
+        "ParameterValue": "0"
+    },
+    {
+        "ParameterKey": "DBStorage",
+        "ParameterValue": "20"
+    },
+    {
+        "ParameterKey": "DBStorageType",
+        "ParameterValue": "gp2"
+    },
+    {
+        "ParameterKey": "DBVersion",
+        "ParameterValue": "11.4"
+    },
+    {
+        "ParameterKey": "EFSThroughputMode",
+        "ParameterValue": "bursting"
+    },
+    {
+        "ParameterKey": "ECSCPUArch",
+        "ParameterValue": "X86_64"
+    },
+    {
+        "ParameterKey": "ECSCPUSize",
+        "ParameterValue": "512"
+    },
+    {
+        "ParameterKey": "ECSMonitoring",
+        "ParameterValue": "disabled"
+    },
+    {
+        "ParameterKey": "ECSCPUUtilizationThreshold",
+        "ParameterValue": "70"
+    },
+    {
+        "ParameterKey": "RDSCPUUtilizationThreshold",
+        "ParameterValue": "70"
+    },
+    {
+        "ParameterKey": "ECSMemorySize",
+        "ParameterValue": "1024"
+    },
+    {
+        "ParameterKey": "ServiceFargateWeight",
+        "ParameterValue": "70"
+    },
+    {
+        "ParameterKey": "ServiceFargateSpotWeight",
+        "ParameterValue": "30"
+    },
+    {
+        "ParameterKey": "ServiceInstances",
+        "ParameterValue": "3"
+    },
+    {
+        "ParameterKey": "S3IntelligentTiering",
+        "ParameterValue": "Disabled"
+    },
+    {
+        "ParameterKey": "CloudFrontPriceClass",
+        "ParameterValue": "PriceClass_100"
+    }
+]

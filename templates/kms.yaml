@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Chiave KMS per crittografia
+
+Resources:
+  # Chiave usata per crittografare le credenziali RDS
+  # Tipo di chiave (default): AES-128-GCM
+  RDSKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Chiave usata per la crittografare le credenziali RDS
+      Enabled: True
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-RDSKey"
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Chiave usata per crittografare l'archiviazione RDS
+  # Tipo di chiave (default): AES-128-GCM
+  RDSStorageKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Chiave usata per la crittografare l'archiviazione RDS
+      Enabled: True
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-RDSStorageKey"
+        - Key: EnvType
+          Value: !Ref EnvType

@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Application Load Balancer (ALB)
+
+# Infrastruttura
+# ===============
+# Load Balancer:
+#   Subnet:
+#     - PublicSubnet1
+#     - PublicSubnet2
+#     - PublicSubnet3
+#
+#   Security Group:
+#     - Proto:tcp  FromPort:80  ToPort:80  CIDR:0.0.0.0/0
+#
+#   Target Group:
+#     Porta: 80
+#     Proto: HTTP
+#     TargetType: ip
+#     (I target vengono gestiti da ECS)
+#
+#   Listener: ALB:80 <-> Target Group:80
+#
+#   Listener rule:
+#     Concedi solo il traffico che ha l'header X-Origin-CloudFront-Only,
+#     con un valore ben specifico. (Valori impostati come parametri)
+
+Parameters:
+  ALBStickinessDuration:
+    Description: Durata (in secondi) del cookie della sticky session
+    Type: Number
+
+  # https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html
+  ALBCustomHeaderName:
+    Description: Nome dell'header personalizzato per CloudFront <-> ALB
+    Type: String
+
+  # https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html
+  ALBCustomHeaderValue:
+    Description: Valore dell'header personalizzato per CloudFront <-> ALB
+    Type: String
+
+Resources:
+  # Security Group del load balancer
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-LoadBalancerSG"
+      GroupDescription: ALB Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-LoadBalancerSG"
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      # NOTA: Impostare a "dualstack" per avere IPv4 + IPv6
+      IpAddressType: "ipv4"
+      Name: !Sub "${AWS::StackName}-ALB"
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+      Type: application
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Load Balancer target group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      # Gli health check avvengono ogni 30s (default)
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/"
+      # NOTA: per abilitare il supporto dualstack (IPv4 + IPv6)
+      # è necessario creare un altro TG con tipo "ipv6"
+      IpAddressType: "ipv4"
+      # Il setup iniziale di Wordpress restituisce HTTP 302,
+      # quindi aggiungilo alla lista di codici OK.
+      # Senza quest'opzione, ECS continua a creare nuove task,
+      # perchè l'health check "fallisce".
+      # ---
+      # Valori ammessi: da 200 a 499
+      Matcher:
+        HttpCode: "200,302"
+      Name: !Sub "${AWS::StackName}-ALBTargetGroup"
+      # Porta su cui ricevere il traffico
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        # Sticky session
+        # ==============
+        # Senza sticky session, la sessione NON viene persistita,
+        # rendendo impossibile il login, e la configurazione di Wordpress.
+        #
+        # Usiamo un cookie generato dal load balancer stesso (lb_cookie),
+        # piuttosto che usare un cookie dell'applicazione (app_cookie)
+        # in modo tale da non dover modificare Wordpress.
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: !Ref ALBStickinessDuration
+        # Tipo di load balancing
+        # =======================
+        # Round Robin -> distribuisce le richieste ad un server,
+        # in maniera "circolare". Non tiene conto del carico dei server.
+        #
+        # Least outstanding requests -> distribuisce le richieste al server
+        # con il minor numero di carico/richiste, assicurandosi quindi
+        # che nessun server venga caricato eccessivamente.
+        - Key: load_balancing.algorithm.type
+          Value: least_outstanding_requests
+      VpcId: !Ref VPC
+      TargetType: ip
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Regola ALB: permetti richieste che includono l'header personalizzato
+  ALBAllowCloudFront:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: !Ref ALBCustomHeaderName
+            Values:
+              - !Ref ALBCustomHeaderValue
+      ListenerArn: !Ref ALBListener
+      Priority: 10
+
+  # Load Balancer listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      # Per creare un certificato SSL per l'ALB, bisogna:
+      # 1. Avere un dominio gestito da Route53
+      # 2. Il dominio risiede sull'account AWS che crea lo stack CF
+      # 3. La validazione DNS è attiva
+      #
+      # Se la validazione DNS non è attiva, lo stack CF rimarrà nello
+      # stato CREATE_IN_PROGRESS fin quando l'email di verifica non
+      # verrà confermata, o viene creato manualmente il record CNAME.
+      # ---
+      # Certificates: ...
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ALB
+      # Porta su cui ricevere il traffico
+      Port: 80
+      Protocol: HTTP

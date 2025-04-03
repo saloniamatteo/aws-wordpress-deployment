@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# DB MariaDB su RDS
+
+# Infrastruttura
+# ===============
+# Database (RDS):
+#   Subnet:
+#     - PrivateSubnet1
+#     - PrivateSubnet2
+#     - PrivateSubnet3
+#
+#   Security Group:
+#     - Proto:tcp  FromPort:3306  ToPort:3306  FromSG: ECS Security Group
+#
+#   Istanza:
+#     Tipo deployment AZ: Multi-AZ (solo se EnvType = prod)
+#     Engine: mariadb
+#     I parametri vengono inseriti da CloudFormation.
+
+Parameters:
+  # Nota: il free tier include 20 GiB
+  # Nota: MySQL e MariaDB richiedono min 20GiB
+  DBStorage:
+    Description: GiB da allocare al DB per Wordpress
+    Type: String
+
+  DBImmediateChanges:
+    Description: I cambiamenti al DB avvengono immediatamente
+    # Bool
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+  DBInstanceClass:
+    Description: Tipo di istanza da usare per il DB
+    Type: String
+
+  DBName:
+    Description: Nome del DB RDS per Wordpress
+    Type: String
+
+  DBDeletionProtection:
+    Description: Imposta lo stato di protezione dall'eliminazione del DB
+    # Bool
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+  # v11.4   EOL: Maggio 2029
+  # v10.11  EOL: Febbraio 2028
+  # v10.6   EOL: Luglio 2026
+  DBVersion:
+    Description: Versione database MariaDB
+    Type: String
+
+  # Valori ammessi: 0, 1, 5, 10, 15, 30, 60
+  DBMonitoringInterval:
+    Description: Intervallo di monitoraggio del DB RDS (in secondi)
+    Type: Number
+
+  # Nota: gp2 rientra nel free tier
+  DBStorageType:
+    Description: Tipologia di archiviazione per il DB per Wordpress
+    Type: String
+
+Resources:
+  # Subnet Group per DB RDS
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: SubnetGroup per RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      DBSubnetGroupName: !Sub "${AWS::StackName}-RDSSubnetGroup"
+
+  # Security Group per DB RDS
+  # Permetti il traffico solo dal Security Group ECS
+  RDSSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+  # Database per wordpress
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !Ref DBStorage
+      AllowMajorVersionUpgrade: false
+      ApplyImmediately: !Ref DBImmediateChanges
+      DBInstanceClass: !Ref DBInstanceClass
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-DB"
+      DBName: !Ref DBName
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      DeletionProtection: !Ref DBDeletionProtection
+      EnableCloudwatchLogsExports:
+        - error
+        - general
+        - slowquery
+      Engine: mariadb
+      EngineVersion: !Ref DBVersion
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref DBUsernameSecret, ':SecretString}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref DBPasswordSecret, ':SecretString}}' ]]
+      MonitoringInterval: !Ref DBMonitoringInterval
+      # Il deployment Multi-AZ viene abilitato solo se in produzione
+      MultiAZ: !If [ IsProdCondition, true, false ]
+      # Impostare "dual" per modalità dual-stack
+      NetworkType: IPV4
+      # Default maintenance window: 30 min selezionati casualmente
+      # da un blocco di 8 ore di tempo per ogni regione AWS,
+      # in un giorno della settimana (DoW) casuale.
+      # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_UpgradeDBInstance.Maintenance.html#AdjustingTheMaintenanceWindow
+      # ---
+      #PreferredMaintenanceWindow: ddd:hh24:mi-ddd:hh24:mi
+      PubliclyAccessible: false
+      KmsKeyId: !Ref RDSStorageKMSKey
+      StorageEncrypted: true
+      StorageType: !Ref DBStorageType
+      # DBSecurityGroups è deprecato
+      VPCSecurityGroups:
+        - !GetAtt RDSSG.GroupId
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType

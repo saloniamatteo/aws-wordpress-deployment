@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Filesystem EFS
+
+# Infrastruttura
+# ===============
+# EFS:
+#   Security Group:
+#     - Proto:tcp  FromPort:2049  ToPort:2049  FromSG: ECS Security Group
+#
+#   Mount Target:
+#     - 1: PrivateSubnet1
+#     - 2: PrivateSubnet2
+#     - 3: PrivateSubnet3
+
+Parameters:
+  # Backup automatici filesystem EFS
+  EFSAutoBackup:
+    Description: Imposta lo stato dei backup automatici EFS
+    Type: String
+    AllowedValues:
+      - "ENABLED"
+      - "DISABLED"
+
+  # Backup automatici filesystem EFS
+  EFSEncryption:
+    Description: Imposta lo stato della crittografia EFS
+    # Bool
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+  # Modalità di throughput filesystem EFS
+  EFSThroughputMode:
+    Description: Imposta la modalità di throughput EFS
+    Type: String
+    AllowedValues:
+      - "bursting"
+      - "provisioned"
+      - "elastic"
+
+Resources:
+  # Security Group per il Filesystem EFS
+  # Permetti tutto il traffico dal Security Group ECS
+  EFSSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "EFS Security Group"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+  # Filesystem EFS
+  EFS:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      BackupPolicy:
+        Status: !Ref EFSAutoBackup
+      Encrypted: !Ref EFSEncryption
+      PerformanceMode: generalPurpose
+      ThroughputMode: !Ref EFSThroughputMode
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-EFS"
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  # Mount target per il volume EFS
+  # Non è necessario collegarle direttamente ai task ECS,
+  # perchè verranno automaticamente richieste dalla connettività EFS.
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !GetAtt EFSSG.Id
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSG
+
+  EFSMountTarget3:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Ref PrivateSubnet3
+      SecurityGroups:
+        - !Ref EFSSG

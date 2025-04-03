@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+# Topic e subscription SNS
+
+# Infrastruttura
+# ===============
+# SNS:
+#   Topic: WordpressStack-Alerts
+#   Subscription: Email to AdminEmail
+
+Parameters:
+  AdminEmail:
+    Description: Email dell'amministratore che riceve le notifiche SNS
+    Type: String
+
+Resources:
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-Alerts"
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AdminEmail
+      TopicArn: !Ref SNSTopic
