@@ -1,7 +1,7 @@
-STACK_NAME       := wpProd
-RAIN_CMD         := ${HOME}/go/bin/rain
-PARAMS_FILE      := wordpress-dev.json
-PARAMS_FILE_PROD := wordpress-prod.json
+STACK_NAME       ?= WordpressStack
+RAIN_CMD         ?= ${HOME}/go/bin/rain
+PARAMS_FILE      ?= wordpress-dev.json
+PARAMS_FILE_PROD ?= wordpress-prod.json
 
 # Verify that rain & jq are installed
 checkrain:
