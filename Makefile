@@ -34,30 +34,6 @@ deploy-prod: lint
 		--params $$(jq -r 'map("\(.ParameterKey)=\(.ParameterValue)") | join(",")' $(PARAMS_FILE_PROD)) \
 		--params ALBCustomHeaderValue=$$(openssl rand -base64 32)
 
-# Deploy using AWS CLI (dev)
-deploy-aws: merged.yaml
-	aws cloudformation create-stack --stack-name $(STACK_NAME) \
-		--template-body file://merged.yaml \
-		--parameters file://$(PARAMS_FILE)
-
-# Deploy to prod using AWS CLI
-deploy-aws-prod: merged.yaml
-	aws cloudformation create-stack --stack-name $(STACK_NAME) \
-		--template-body file://merged.yaml \
-		--parameters file://$(PARAMS_FILE_PROD)
-
-# Update stack using AWS CLI (dev)
-update-aws: merged.yaml
-	aws cloudformation update-stack --stack-name $(STACK_NAME) \
-		--template-body file://merged.yaml \
-		--parameters file://$(PARAMS_FILE)
-
-# Update stack in prod using AWS CLI
-update-aws-prod: merged.yaml
-	aws cloudformation update-stack --stack-name $(STACK_NAME) \
-		--template-body file://merged.yaml \
-		--parameters file://$(PARAMS_FILE_PROD)
-
 delete:
 	aws cloudformation delete-stack --stack-name $(STACK_NAME)
 
