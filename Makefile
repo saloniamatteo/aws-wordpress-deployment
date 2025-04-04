@@ -26,13 +26,23 @@ lint: merged.yaml
 deploy: lint
 	$(RAIN_CMD) deploy merged.yaml $(STACK_NAME) \
 		--params $$(jq -r 'map("\(.ParameterKey)=\(.ParameterValue)") | join(",")' $(PARAMS_FILE)) \
-		--params ALBCustomHeaderValue=$$(openssl rand -base64 32)
+		--params CloudFrontPrefixListId=$$(\
+			aws ec2 describe-managed-prefix-lists \
+			--filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
+			--query "PrefixLists[0].PrefixListId" \
+			--output text\
+		)
 
 # Deploy (prod)
 deploy-prod: lint
 	$(RAIN_CMD) deploy merged.yaml $(STACK_NAME) \
 		--params $$(jq -r 'map("\(.ParameterKey)=\(.ParameterValue)") | join(",")' $(PARAMS_FILE_PROD)) \
-		--params ALBCustomHeaderValue=$$(openssl rand -base64 32)
+		--params CloudFrontPrefixListId=$$(\
+			aws ec2 describe-managed-prefix-lists \
+			--filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
+			--query "PrefixLists[0].PrefixListId" \
+			--output text\
+		)
 
 delete:
 	aws cloudformation delete-stack --stack-name $(STACK_NAME)

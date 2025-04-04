@@ -27,6 +27,20 @@ Parameters:
       - "PriceClass_All"
 
 Resources:
+  # VPC Origin
+  CloudFrontVPCOrigin:
+    Type: AWS::CloudFront::VpcOrigin
+    Properties:
+      VpcOriginEndpointConfig:
+        Arn: !Ref ALB
+        HTTPPort: 80
+        Name: !Sub "${AWS::StackName}-CloudFrontVPCOrigin"
+        # Il load balancer non è configurato con HTTPS
+        OriginProtocolPolicy: http-only
+      Tags:
+        - Key: EnvType
+          Value: !Ref EnvType
+
   # Distribuzione CloudFront
   CloudFront:
     Type: AWS::CloudFront::Distribution
@@ -95,7 +109,7 @@ Resources:
           # Query strings incluse: tutte
           OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
           #PathPattern: "*"
-          TargetOriginId: ALBOrigin
+          TargetOriginId: VPCOrigin
           # Valori ammessi:
           # allow-all -> Permetti sia HTTP che HTTPS
           # redirect-to-https -> HTTP viene reindirizzato ad HTTPS
@@ -116,17 +130,9 @@ Resources:
           IncludeCookies: true
           Prefix: "logs/cloudfront/"
         Origins:
-          - Id: ALBOrigin
-            CustomOriginConfig:
-              HTTPPort: 80
-              # Valori ammessi:
-              # http-only -> CF usa sempre HTTP per connettersi all'origine
-              # https-only -> CF usa sempre HTTPS per connettersi all'origine
-              # match-viewer -> CF usa il protocollo usato per la richiesta
-              OriginProtocolPolicy: http-only
-            OriginCustomHeaders:
-               - HeaderName: !Ref ALBCustomHeaderName
-                 HeaderValue: !Ref ALBCustomHeaderValue
+          - Id: VPCOrigin
+            VpcOriginConfig:
+              VpcOriginId: !GetAtt CloudFrontVPCOrigin.Id
             # Nome di dominio dell'origine
             # Usiamo il nome del Load Balancer
             DomainName: !GetAtt ALB.DNSName
@@ -134,25 +140,6 @@ Resources:
       Tags:
         - Key: EnvType
           Value: !Ref EnvType
-
-  # Regola ALB: tutte le altre richieste vengono reindirizzate a CloudFront
-  # Creiamo qui questa regola per non creare dipendenze circolari.
-  ALBDenyAll:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      Actions:
-        - Type: redirect
-          RedirectConfig:
-            Protocol: HTTPS
-            Host: !GetAtt CloudFront.DomainName
-            StatusCode: HTTP_301
-      Conditions:
-        - Field: host-header
-          HostHeaderConfig:
-            Values:
-              - "*.*"
-      ListenerArn: !Ref ALBListener
-      Priority: 100
 
 Outputs:
   CFDomainName:

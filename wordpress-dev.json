@@ -28,10 +28,6 @@
         "ParameterValue": "900"
     },
     {
-        "ParameterKey": "ALBCustomHeaderName",
-        "ParameterValue": "X-Origin-CloudFront-Only"
-    },
-    {
         "ParameterKey": "DBName",
         "ParameterValue": "wordpressdb"
     },

@@ -30,18 +30,19 @@ Parameters:
     Description: Durata (in secondi) del cookie della sticky session
     Type: Number
 
-  # https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html
-  ALBCustomHeaderName:
-    Description: Nome dell'header personalizzato per CloudFront <-> ALB
-    Type: String
-
-  # https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html
-  ALBCustomHeaderValue:
-    Description: Valore dell'header personalizzato per CloudFront <-> ALB
+  # Questo valore viene ottenuto tramite Makefile,
+  # piuttosto che inserire un valore hardcoded.
+  # ---
+  # https://repost.aws/questions/QUqRO04PyvQBWBBPnacWNwgw/cloudformation-how-to-use-prefix-list-as-source
+  # https://docs.aws.amazon.com/vpc/latest/userguide/working-with-aws-managed-prefix-lists.html
+  CloudFrontPrefixListId:
+    Description: ID della Managed Prefix List di AWS per CloudFront (com.amazonaws.global.cloudfront.origin-facing)
     Type: String
 
 Resources:
   # Security Group del load balancer
+  # Permette il traffico solo dagli indirizzi IP
+  # nella prefix list gestita da AWS per CloudFront
   LoadBalancerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -52,7 +53,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: '80'
           ToPort: '80'
-          CidrIp: 0.0.0.0/0
+          SourcePrefixListId: !Ref CloudFrontPrefixListId
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-LoadBalancerSG"
@@ -66,11 +67,11 @@ Resources:
       # NOTA: Impostare a "dualstack" per avere IPv4 + IPv6
       IpAddressType: "ipv4"
       Name: !Sub "${AWS::StackName}-ALB"
-      Scheme: internet-facing
+      Scheme: internal
       Subnets:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-        - !Ref PublicSubnet3
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
       SecurityGroups:
         - !Ref LoadBalancerSG
       Type: application
@@ -130,22 +131,6 @@ Resources:
       Tags:
         - Key: EnvType
           Value: !Ref EnvType
-
-  # Regola ALB: permetti richieste che includono l'header personalizzato
-  ALBAllowCloudFront:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      Actions:
-        - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
-      Conditions:
-        - Field: http-header
-          HttpHeaderConfig:
-            HttpHeaderName: !Ref ALBCustomHeaderName
-            Values:
-              - !Ref ALBCustomHeaderValue
-      ListenerArn: !Ref ALBListener
-      Priority: 10
 
   # Load Balancer listener
   ALBListener:

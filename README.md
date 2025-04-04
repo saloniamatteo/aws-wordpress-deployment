@@ -104,22 +104,22 @@ email to the provided `AdminEmail` parameter through an SNS Subscription.
 
 **Don't forget to set this value!** The default is `CHANGEME@example.com`.
 
-### CloudFront <-> ALB
-The ALB only accepts direct traffic from CloudFront, by providing
-a [custom header](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html).
-
-This header is named `X-Origin-CloudFront-Only`, and its value is generated automatically
-when running `make deploy` (or `make deploy-prod`) with the following command:
-
-```bash
-openssl rand -base64 32
-```
-
-NOTE: the ALB also enables stickiness, provided by a LB cookie,
+### ALB
+The Application Load Balancer (ALB) enables stickiness, provided by an LB cookie,
 for a total duration of 15 minutes. This value can be changed.
 
 Stickiness needs to be turned on in order to allow logins.
 Without it, trying to login would result in a page refresh.
+
+### CloudFront <-> ALB
+The ALB only accepts direct traffic from CloudFront, by creating a
+[CloudFront VPC Origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html).
+
+The ALB is internal only, and is therefore placed in all three private subnets.
+
+**NOTE**: the Managed Prefix List ID (`com.amazonaws.global.cloudfront.origin-facing`)
+is fetched when running `make deploy` (or `make deploy-prod`), so as to avoid hardcoded values.
+This is needed in order to restrict access to the load balancer, and to allow only CloudFront.
 
 ### RDS DB Credentials
 The credentials used to access the RDS DB (username & password) are generated
